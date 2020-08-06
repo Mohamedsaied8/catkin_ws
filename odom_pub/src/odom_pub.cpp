@@ -1,14 +1,8 @@
 #include <ros/ros.h>
 #include <tf/transform_broadcaster.h>
 #include <nav_msgs/Odometry.h>
-
-int main(int argc, char** argv){
-  ros::init(argc, argv, "odometry_publisher");
-
-  ros::NodeHandle n;
-  ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>("odom", 50);
-  tf::TransformBroadcaster odom_broadcaster;
-
+#include <sensor_msgs/Imu.h>
+//Global Variables
   double x = 0.0;
   double y = 0.0;
   double th = 0.0;
@@ -16,6 +10,33 @@ int main(int argc, char** argv){
   double vx = 0.1;
   double vy = -0.1;
   double vth = 0.1;
+
+
+  double vx_prev = 0;
+  double vy_prev = 0;
+  double vth_prev =0;
+
+  double accel_x = 0;
+  double accel_y = 0;
+  double accel_z =0;
+  
+void callback(const sensor_msgs::Imu::ConstPtr& msg ) {
+ROS_INFO("i heared : %f %f %f ",msg->linear_acceleration.x,msg->linear_acceleration.y,msg->linear_acceleration.z ) ;
+accel_x=msg->linear_acceleration.x;
+accel_y=msg->linear_acceleration.y;
+accel_z=msg->linear_acceleration.z;
+}
+
+
+int main(int argc, char** argv){
+  ros::init(argc, argv, "odometry_publisher");
+
+  ros::NodeHandle n;
+  ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>("odom", 50);
+  ros::Subscriber sub = n.subscribe("imu/data_raw" ,1000, &callback);
+
+  tf::TransformBroadcaster odom_broadcaster;
+
 
   ros::Time current_time, last_time;
   current_time = ros::Time::now();
@@ -26,9 +47,17 @@ while(n.ok()){
 
     ros::spinOnce();               // check for incoming messages
     current_time = ros::Time::now();
+     double dt = (current_time - last_time).toSec();
+    
+    //compute velocity : velocity_x = velocity_x_previous + accel_x * dt;
+    vx=vx_prev+accel_x*dt;
+
+    vy=vy_prev+accel_y*dt;
+    vth= vth_prev+ accel_z*dt;
+
 
     //compute odometry in a typical way given the velocities of the robot
-    double dt = (current_time - last_time).toSec();
+   
     double delta_x = (vx * cos(th) - vy * sin(th)) * dt;
     double delta_y = (vx * sin(th) + vy * cos(th)) * dt;
     double delta_th = vth * dt;
@@ -45,7 +74,7 @@ while(n.ok()){
     odom_trans.header.stamp = current_time;
     odom_trans.header.frame_id = "odom";
     odom_trans.child_frame_id = "base_link";
- odom_trans.transform.translation.x = x;
+    odom_trans.transform.translation.x = x;
     odom_trans.transform.translation.y = y;
     odom_trans.transform.translation.z = 0.0;
     odom_trans.transform.rotation = odom_quat;
@@ -70,6 +99,9 @@ while(n.ok()){
     odom.twist.twist.linear.y = vy;
     odom.twist.twist.angular.z = vth;
 
+    vx_prev=vx;
+    vy=vy_prev;
+    vth_prev=vth;
     //publish the message
     odom_pub.publish(odom);
 
